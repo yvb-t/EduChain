@@ -1,0 +1,489 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password_hash String
+  role          String    // STUDENT, DONOR, ADMIN
+  country       String?   // NEW
+  is_verified   Boolean   @default(false)
+  created_at    DateTime  @default(now())
+
+  studentProfile StudentProfile?
+  donorProfile   DonorProfile?
+  ngoProfile     NGOProfile?
+}
+
+model StudentProfile {
+  user_id          String    @id
+  user             User      @relation(fields: [user_id], references: [id])
+  full_name        String
+  photo_url        String?
+  institution_name String?
+  course_name      String?
+  bio              String?
+  phone_number     String?
+  alternate_phone  String?
+  permanent_address String?
+  current_address  String?
+  emergency_contact String?
+  
+  // Personal
+  dob              DateTime?
+  gender           String?
+  parent_name      String?
+  parent_occupation String?
+  family_annual_income Decimal?
+
+  // Education
+  roll_number      String?
+  current_year     String?   // e.g., "3rd Year"
+  attendance_percentage Float?
+
+  // Verification & Trust
+  academic_score   Float?    // Percentage or CGPA
+  trust_score      Int       @default(0)
+  trust_level      String    @default("BRONZE") // BRONZE, SILVER, GOLD, DIAMOND
+  financial_stress_score Float @default(0) // 0-10
+  
+  is_identity_verified   Boolean   @default(false)
+  is_financial_verified  Boolean   @default(false)
+  is_academic_verified   Boolean   @default(false)
+  
+  gps_location     String?   // "lat,lng"
+  kyc_status       String    @default("PENDING") // PENDING, VERIFIED, REJECTED
+  
+  // Feature: Campus Location Verification
+  is_campus_verified       Boolean   @default(false)
+  campus_verification_date DateTime?
+  campus_verification_data String?   // JSON: { lat (truncated), lon (truncated), accuracy, timestamp }
+  verification_count       Int       @default(0)
+  last_proof_token         String?   // Hashed token for immutable proof
+  
+  aadhaar_hash             String?   @unique
+  guardian_phone           String?
+  guardian_verified        Boolean   @default(false)
+  parent_phone_verified    Boolean   @default(false) // NEW: Parent OTP Check
+  
+  bank_name            String?   // NEW
+  bank_account_hash    String?   // Hash of (Account No + IFSC)
+  risk_score               Int       @default(0)
+  is_frozen                Boolean   @default(false) // Donor Protection Mode
+  
+  video_pitch_url  String?
+  skills           String?   // JSON: ["Python", "Public Speaking"]
+  goals            String?   // JSON: ["Become a Doctor", "Support Family"]
+  achievements     String?   // JSON: [{title: "Won Debate", date: "2024"}]
+  
+  social_links     String?   // JSON string: { linkedin, github, etc. }
+  
+  // Feature: Duplicate Detection
+  device_id        String?   // NEW: For device fingerprinting
+  face_match_score Float?    // NEW: AI Face Match Score
+
+  scholarships     ScholarshipRequest[]
+  documents        StudentDocument[]
+  portfolio        PortfolioItem[]
+  educationRecords EducationRecord[]
+  timelineEvents   TimelineEvent[]
+  
+  // Feature: NGO Management
+  managed_by_ngo_id String?
+  ngo              NGOProfile? @relation(fields: [managed_by_ngo_id], references: [user_id])
+  
+  // Feature: Live Face Verification
+  is_face_verified       Boolean   @default(false)
+  face_verification_data String?   // JSON for biometric metadata
+  face_verification_image_url String?
+  
+  // Feature: Donor Chat
+  chatSessions     ChatSession[]
+  payouts          Payout[]
+}
+
+model TimelineEvent {
+  id          String   @id @default(uuid())
+  student_id  String
+  student     StudentProfile @relation(fields: [student_id], references: [user_id])
+  title       String
+  description String?
+  icon        String   // e.g., "CHECK", "AWARD", "MONEY"
+  date        DateTime @default(now())
+}
+
+model StudentDocument {
+  id         String         @id @default(uuid())
+  student_id String
+  student    StudentProfile @relation(fields: [student_id], references: [user_id])
+  type       String         // AADHAAR, PAN, STUDENT_ID, INCOME_CERT, MARK_SHEET, FEE_RECEIPT, etc.
+  category   String         // IDENTITY, ACADEMIC, FINANCIAL, REQUEST_SUPPORT
+  file_url   String
+  file_hash  String?        // AI Detection Fingerprint
+  status     String         @default("PENDING") // PENDING, VERIFIED, REJECTED
+  metadata   String?        // JSON string for extra info (e.g. document number, issue date)
+  created_at DateTime       @default(now())
+  
+  fraudChecks FraudCheckLog[]
+}
+
+model EducationRecord {
+  id              String         @id @default(uuid())
+  student_id      String
+  student         StudentProfile @relation(fields: [student_id], references: [user_id])
+  level           String         // "10th", "12th", "Semester 1", etc.
+  institution     String
+  score           Float          // Percentage or CGPA
+  max_score       Float          // e.g., 100 or 10
+  year_of_passing Int
+  marksheet_url   String?
+  created_at      DateTime       @default(now())
+}
+
+model PortfolioItem {
+  id          String         @id @default(uuid())
+  student_id  String
+  student     StudentProfile @relation(fields: [student_id], references: [user_id])
+  title       String
+  description String
+  image_url   String
+  date        DateTime       @default(now())
+}
+
+model DonorProfile {
+  user_id       String    @id
+  user          User      @relation(fields: [user_id], references: [id])
+  full_name     String
+  phone_number  String?
+  address       String?
+  bio           String?
+  total_donated Decimal   @default(0)
+  current_streak Int      @default(0)
+  last_donation_date DateTime?
+  
+  // Feature: Impact & Clubs
+  impact_points Int       @default(0)
+  club_tier     String    @default("STARTER") // STARTER, BRONZE, SILVER, GOLD, PLATINUM
+  badges        String?   // JSON: ["EARLY_BIRD", "CONST_SUPPORTER"]
+  
+  donations     Donation[]
+  chatSessions  ChatSession[]
+  transactions  Transaction[]
+  savedPaymentMethods SavedPaymentMethod[]
+}
+
+model ScholarshipRequest {
+  id               String          @id @default(uuid())
+  student_id       String
+  student          StudentProfile  @relation(fields: [student_id], references: [user_id])
+  type             String          // MICRO, BIG
+  title            String
+  description      String
+  proof_url                String?
+  file_hash                String?         // AI Detection Fingerprint
+  authority_number         String?
+  institution_contact_number String?       // For verification
+  personal_details         String?         // JSON string for Parent Name, Address, etc.
+  category                 String?         // Exam Fee, Hostel, Books, etc.
+  expense_breakdown        String?         // JSON string
+  amount_requested         Decimal
+  amount_raised    Decimal         @default(0)
+  status           String          @default("ACTIVE") // ACTIVE, COMPLETED, CANCELLED, FUNDED
+  deadline         DateTime?
+  created_at       DateTime        @default(now())
+
+  // Feature: Urgency & Guarantee
+  urgency_level    String?         // LOW, MEDIUM, HIGH, CRITICAL
+  guarantee_opt_in Boolean         @default(false)
+  
+  // Feature: Advanced Verification
+  verification_status String       @default("PENDING_INITIAL") // PENDING_INITIAL, COLLEGE_VERIFIED, ADMIN_VERIFIED, REJECTED
+  verified_by_college Boolean      @default(false)
+  verified_by_admin   Boolean      @default(false)
+  
+  // Feature: Misuse Prevention
+  refund_policy_agreed Boolean     @default(false) // NEW
+  fund_usage_verified  Boolean     @default(false) // NEW
+  
+  donations        Donation[]
+  proofs           ProofSubmission[]
+  updates          ScholarshipUpdate[]
+  verificationRequests VerificationRequest[]
+  chatSessions     ChatSession[]
+  transactions     Transaction[]
+}
+
+model Donation {
+  id                  String             @id @default(uuid())
+  donor_id            String
+  donor               DonorProfile       @relation(fields: [donor_id], references: [user_id])
+  scholarship_id      String?
+  scholarship         ScholarshipRequest? @relation(fields: [scholarship_id], references: [id])
+  campaign_id         String?
+  campaign            Campaign?          @relation(fields: [campaign_id], references: [id])
+  amount              Decimal
+  currency            String             @default("INR")
+  payment_gateway_ref String?
+  status              String             @default("SUCCESS") // SUCCESS, FAILED
+  created_at          DateTime           @default(now())
+  
+  // Feature: Multi-Mode & Blockchain
+  payment_mode        String             @default("UPI") // UPI, CARD, CRYPTO
+  is_guaranteed       Boolean            @default(false)
+  blockchain_tx_hash  String?
+  certificate_url     String?
+}
+
+model ProofSubmission {
+  id             String             @id @default(uuid())
+  scholarship_id String
+  scholarship    ScholarshipRequest @relation(fields: [scholarship_id], references: [id])
+  file_url       String
+  description    String?
+  verified       Boolean            @default(false)
+  
+  // Feature: 100% Proof System
+  type           String             @default("INITIAL") // INITIAL, BEFORE, AFTER, ADDITIONAL
+  status         String             @default("PENDING") // PENDING, APPROVED, REJECTED
+  ai_fraud_score Float?
+  ai_fraud_reason String?
+  
+  created_at     DateTime           @default(now())
+}
+
+model ScholarshipUpdate {
+  id             String             @id @default(uuid())
+  scholarship_id String
+  scholarship    ScholarshipRequest @relation(fields: [scholarship_id], references: [id])
+  title          String
+  description    String
+  image_url      String?
+  created_at     DateTime           @default(now())
+  
+  // Feature: Progress Reports
+  type           String             @default("UPDATE") // UPDATE, PROGRESS_REPORT
+  metrics        String?            // JSON: { grades: "A", attendance: "90%" }
+}
+
+// Feature: AI Fraud Detection
+model FraudCheckLog {
+  id          String   @id @default(uuid())
+  document_id String?
+  document    StudentDocument? @relation(fields: [document_id], references: [id])
+  check_type  String   // DOCUMENT_HASH, OCR_ANALYSIS, METADATA_CHECK
+  result      String   // PASSED, FLAGGED
+  confidence  Float
+  details     String?
+  created_at  DateTime @default(now())
+}
+
+// Feature: College Admin Verification
+model CollegeAdmin {
+  id             String   @id @default(uuid())
+  user_id        String   @unique // Link to User model if needed, or standalone
+  institution_name String
+  email          String   @unique
+  is_verified    Boolean  @default(false)
+  
+  verificationRequests VerificationRequest[]
+}
+
+model VerificationRequest {
+  id             String             @id @default(uuid())
+  scholarship_id String
+  scholarship    ScholarshipRequest @relation(fields: [scholarship_id], references: [id])
+  admin_id       String?
+  admin          CollegeAdmin?      @relation(fields: [admin_id], references: [id])
+  status         String             @default("PENDING") // PENDING, ASSIGNED, VERIFIED, REJECTED
+  comments       String?
+  created_at     DateTime           @default(now())
+  updated_at     DateTime           @updatedAt
+}
+
+// Feature: Donor Chat
+model ChatSession {
+  id             String             @id @default(uuid())
+  donor_id       String
+  donor          DonorProfile       @relation(fields: [donor_id], references: [user_id])
+  student_id     String
+  student        StudentProfile     @relation(fields: [student_id], references: [user_id])
+  scholarship_id String?
+  scholarship    ScholarshipRequest? @relation(fields: [scholarship_id], references: [id])
+  status         String             @default("ACTIVE") // ACTIVE, ARCHIVED, BLOCKED
+  created_at     DateTime           @default(now())
+  
+  messages       ChatMessage[]
+}
+
+model ChatMessage {
+  id          String      @id @default(uuid())
+  session_id  String
+  session     ChatSession @relation(fields: [session_id], references: [id])
+  sender_id   String      // User ID of sender
+  content     String
+  is_filtered Boolean     @default(false) // AI Filter
+  created_at  DateTime    @default(now())
+}
+
+model FraudLog {
+  id        String   @id @default(uuid())
+  user_id   String?
+  event     String   // e.g., "DUPLICATE_IP", "TAMPERED_DOC"
+  details   String?
+  ip_address String?
+  device_id String?
+  createdAt DateTime @default(now())
+}
+
+model LoginHistory {
+  id        String   @id @default(uuid())
+  user_id   String
+  ip_address String
+  device_id String?
+  city      String?
+  login_at  DateTime @default(now())
+}
+
+model Transaction {
+  id                  String   @id @default(uuid())
+  amount              Decimal
+  currency            String   @default("INR")
+  status              String   @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED
+  payment_gateway_ref String?
+  payment_method_type String?  // CARD, UPI, WALLET
+  donor_id            String
+  donor               DonorProfile @relation(fields: [donor_id], references: [user_id])
+  scholarship_id      String?
+  scholarship         ScholarshipRequest? @relation(fields: [scholarship_id], references: [id])
+  campaign_id         String?
+  campaign            Campaign?          @relation(fields: [campaign_id], references: [id])
+  
+  is_recurring        Boolean  @default(false)
+  recurring_frequency String?  // MONTHLY, YEARLY
+  
+  fee_platform        Decimal  @default(0)
+  fee_gateway         Decimal  @default(0)
+  fees_covered_by_donor Boolean @default(false)
+  
+  is_anonymous        Boolean  @default(false)
+  donor_message       String?
+  
+  receipt_url         String?
+  tax_cert_url        String?
+  metadata            String?  // JSON: IP, Device, Country
+  
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+  
+  refundLogs          RefundLog[]
+}
+
+model SavedPaymentMethod {
+  id          String       @id @default(uuid())
+  donor_id    String
+  donor       DonorProfile @relation(fields: [donor_id], references: [user_id])
+  token       String       // Safe Token from Gateway
+  card_brand  String?
+  last4       String?
+  expiry      String?
+  created_at  DateTime     @default(now())
+}
+
+model Payout {
+  id             String         @id @default(uuid())
+  student_id     String
+  student        StudentProfile @relation(fields: [student_id], references: [user_id])
+  amount         Decimal
+  status         String         @default("PENDING") // PENDING, PROCESSED, FAILED
+  scheduled_date DateTime?
+  created_at     DateTime       @default(now())
+}
+
+model RefundLog {
+  id             String      @id @default(uuid())
+  transaction_id String
+  transaction    Transaction @relation(fields: [transaction_id], references: [id])
+  reason         String
+  amount         Decimal
+  processed_by   String?     // Admin ID
+  created_at     DateTime    @default(now())
+}
+
+// Feature: NGO Donation Page
+model NGOProfile {
+  user_id             String    @id
+  user                User      @relation(fields: [user_id], references: [id])
+  name                String
+  description         String
+  registration_number String?
+  logo_url            String?
+  banner_url          String?
+  website_url         String?
+  video_url           String?
+  
+  is_verified         Boolean   @default(false)
+  trust_score         Int       @default(0)
+  
+  // Feature: NGO Authenticity
+  office_geo_location String?   // NEW: "lat,lng"
+  founder_id_verified Boolean   @default(false) // NEW
+  
+  // Feature: Verification Dashboard
+  verification_documents String? // JSON: { trust_deed: "url", pan: "url", 80g: "url" }
+  verification_status    String  @default("PENDING") // PENDING, UNDER_REVIEW, VERIFIED, REJECTED
+  
+  impact_lives_touched Int      @default(0)
+  impact_funds_raised  Decimal  @default(0)
+  
+  campaigns           Campaign[]
+  transparencyReports TransparencyReport[]
+  managedStudents     StudentProfile[]
+  impactStories       ImpactStory[]
+  created_at          DateTime  @default(now())
+}
+
+model Campaign {
+  id              String      @id @default(uuid())
+  ngo_id          String
+  ngo             NGOProfile  @relation(fields: [ngo_id], references: [user_id])
+  title           String
+  description     String
+  image_url       String?
+  target_amount   Decimal
+  raised_amount   Decimal     @default(0)
+  start_date      DateTime    @default(now())
+  end_date        DateTime?
+  status          String      @default("ACTIVE") // ACTIVE, COMPLETED, PAUSED
+  
+  donations       Donation[]
+  transactions    Transaction[]
+  created_at      DateTime    @default(now())
+}
+
+model TransparencyReport {
+  id          String      @id @default(uuid())
+  ngo_id      String
+  ngo         NGOProfile  @relation(fields: [ngo_id], references: [user_id])
+  title       String
+  description String?
+  document_url String
+  date        DateTime    @default(now())
+  created_at  DateTime    @default(now())
+}
+
+model ImpactStory {
+  id          String      @id @default(uuid())
+  ngo_id      String
+  ngo         NGOProfile  @relation(fields: [ngo_id], references: [user_id])
+  title       String
+  description String
+  image_url   String?
+  video_url   String?
+  created_at  DateTime    @default(now())
+}
